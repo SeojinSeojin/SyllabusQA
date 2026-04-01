@@ -50,11 +50,54 @@ print("=" * 60)
 # ─────────────────────────────────────────────
 
 def load_syllabus_text(name: str) -> str:
+    """
+    Read syllabus file with automatic encoding detection.
+    Many syllabus files were saved on Windows and use cp1252 / latin-1,
+    which causes the common replacement character when read as utf-8.
+    Strategy: try utf-8 first, fall back to cp1252, then latin-1.
+    After reading, normalise the most common Windows smart-characters
+    so the LLM receives clean ASCII-compatible text.
+    """
     path = SYLLABI_DIR / f"{name}.txt"
     if not path.exists():
         raise FileNotFoundError(f"Syllabus not found: {path}")
-    return path.read_text(encoding="utf-8").strip()
-
+ 
+    raw_bytes = path.read_bytes()
+ 
+    # Try encodings in order; stop at first clean decode
+    text = None
+    for enc in ("utf-8", "cp1252", "latin-1"):
+        try:
+            decoded = raw_bytes.decode(enc)
+            if "\ufffd" not in decoded:   # no replacement chars
+                text = decoded
+                print(f"  [load] '{name}' decoded as {enc}")
+                break
+        except (UnicodeDecodeError, ValueError):
+            continue
+ 
+    if text is None:
+        # Last resort: utf-8 with lossy replacement
+        text = raw_bytes.decode("utf-8", errors="replace")
+        print(f"  [load] WARNING: '{name}' used fallback replace decoding")
+ 
+    # Normalise Windows-1252 typographic chars -> plain ASCII equivalents
+    replacements = {
+        "\u2013": "-",    # en dash  --
+        "\u2014": "--",   # em dash  ---
+        "\u2018": "'",   # left single quotation mark
+        "\u2019": "'",   # right single quotation mark / apostrophe
+        "\u201c": '"',  # left double quotation mark
+        "\u201d": '"',  # right double quotation mark
+        "\u2022": "-",    # bullet
+        "\u2026": "...",  # ellipsis
+        "\u00a0": " ",    # non-breaking space
+    }
+    for char, replacement in replacements.items():
+        text = text.replace(char, replacement)
+ 
+    return text.strip()
+ 
 
 def load_and_filter(name: str) -> dict:
     splits = {}
