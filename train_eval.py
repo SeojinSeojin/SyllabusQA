@@ -354,6 +354,10 @@ def train(model, tokenizer, splits, rag: SyllabusRAG):
     val_ds   = df_to_dataset(splits["val"])
     print(f"  train: {len(train_ds)}  |  val: {len(val_ds)}")
 
+    # trl 1.0.0 API changes:
+    #   max_seq_length  -> max_length
+    #   dataset_text_field removed (pass pre-formatted "text" col directly)
+    #   tokenizer param in SFTTrainer -> processing_class
     sft_config = SFTConfig(
         output_dir=str(OUTPUT_DIR / "checkpoints"),
         num_train_epochs=5,
@@ -368,8 +372,7 @@ def train(model, tokenizer, splits, rag: SyllabusRAG):
         save_strategy="epoch",
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",
-        max_seq_length=1024,
-        dataset_text_field="text",
+        max_length=1024,
         report_to="none",
         dataloader_pin_memory=False,
     )
@@ -379,7 +382,7 @@ def train(model, tokenizer, splits, rag: SyllabusRAG):
         args=sft_config,
         train_dataset=train_ds,
         eval_dataset=val_ds,
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
     )
 
     print("\n[3/5] Training...")
