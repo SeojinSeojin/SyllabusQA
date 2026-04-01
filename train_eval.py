@@ -304,7 +304,7 @@ def load_model_and_tokenizer():
         load_in_4bit=True,
         bnb_4bit_use_double_quant=True,
         bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.bfloat16,
+        bnb_4bit_compute_dtype=torch.float16,   # must match fp16=True in SFTConfig
     )
 
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, trust_remote_code=True)
@@ -363,10 +363,11 @@ def train(model, tokenizer, splits, rag: SyllabusRAG):
         num_train_epochs=5,
         per_device_train_batch_size=2,
         gradient_accumulation_steps=8,   # effective batch size = 16
-        warmup_ratio=0.05,
+        warmup_steps=10,                        # warmup_ratio deprecated in transformers v5.2
         learning_rate=2e-4,
         lr_scheduler_type="cosine",
         fp16=True,                        # 2080 Ti has no bf16 support
+        gradient_checkpointing=True,          # saves VRAM during backprop
         logging_steps=10,
         eval_strategy="epoch",
         save_strategy="epoch",
@@ -427,7 +428,7 @@ def generate_answers(model, tokenizer, df, rag: SyllabusRAG, batch_size=4) -> li
             padding=True,
             truncation=True,
             max_length=1024,
-        ).to(model.device)
+        ).to(next(model.parameters()).device)
 
         with torch.no_grad():
             outputs = model.generate(
@@ -595,7 +596,5 @@ def main():
     print(f"  Results → {OUTPUT_DIR}")
 
 
-if __name__ == "__main__":
-    main()
 if __name__ == "__main__":
     main()
