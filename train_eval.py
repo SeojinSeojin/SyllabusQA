@@ -61,9 +61,9 @@ def load_syllabus_text(name: str) -> str:
     path = SYLLABI_DIR / f"{name}.txt"
     if not path.exists():
         raise FileNotFoundError(f"Syllabus not found: {path}")
- 
+
     raw_bytes = path.read_bytes()
- 
+
     # Try encodings in order; stop at first clean decode
     text = None
     for enc in ("utf-8", "cp1252", "latin-1"):
@@ -75,12 +75,12 @@ def load_syllabus_text(name: str) -> str:
                 break
         except (UnicodeDecodeError, ValueError):
             continue
- 
+
     if text is None:
         # Last resort: utf-8 with lossy replacement
         text = raw_bytes.decode("utf-8", errors="replace")
         print(f"  [load] WARNING: '{name}' used fallback replace decoding")
- 
+
     # Normalise Windows-1252 typographic chars -> plain ASCII equivalents
     replacements = {
         "\u2013": "-",    # en dash  --
@@ -95,17 +95,70 @@ def load_syllabus_text(name: str) -> str:
     }
     for char, replacement in replacements.items():
         text = text.replace(char, replacement)
- 
+
     return text.strip()
- 
+
 
 def load_and_filter(name: str) -> dict:
-    splits = {}
+    """
+    A-type experiment: collect ALL Q&A rows for the target syllabus
+    across every original split, then re-split 80/10/10 ourselves.
+
+    Why re-split instead of using the original CSVs?
+    The original train/test/val use *different* syllabi in each split,
+    so filtering by name would give us almost nothing in train and
+    everything in one of the test files.  For the A-type experiment we
+    want the model to learn from this syllabus, so we need all its rows
+    in one pool and divide them ourselves.
+
+    Stratified by question_type so every split has a proportional mix
+    of single-reasoning / multi-reasoning / summarization questions.
+    """
+    from sklearn.model_selection import train_test_split
+
+    # Gather all rows for the target syllabus from every CSV
+    all_rows = []
     for split in ["train", "val", "test"]:
         df = pd.read_csv(DATA_DIR / f"{split}.csv")
-        filtered = df[df["syllabus_name"] == name].reset_index(drop=True)
-        splits[split] = filtered
-        print(f"  [{split}] total {len(df)} → filtered {len(filtered)}")
+        subset = df[df["syllabus_name"] == name]
+        all_rows.append(subset)
+        print(f"  [{split}] found {len(subset)} rows for '{name}'")
+
+    full_df = pd.concat(all_rows, ignore_index=True)
+    print(f"  [total] {len(full_df)} rows collected")
+
+    if len(full_df) < 10:
+        raise ValueError(
+            f"Only {len(full_df)} rows found for '{name}'. "
+            "Check the syllabus_name value in the CSVs."
+        )
+
+    # Stratified 80/10/10 split
+    # First cut: 80% train, 20% temp
+    train_df, temp_df = train_test_split(
+        full_df, test_size=0.20, random_state=42,
+        stratify=full_df["question_type"] if full_df["question_type"].nunique() > 1 else None,
+    )
+    # Second cut: split temp 50/50 → 10% val, 10% test
+    val_df, test_df = train_test_split(
+        temp_df, test_size=0.50, random_state=42,
+        stratify=temp_df["question_type"] if temp_df["question_type"].nunique() > 1 else None,
+    )
+
+    splits = {
+        "train": train_df.reset_index(drop=True),
+        "val":   val_df.reset_index(drop=True),
+        "test":  test_df.reset_index(drop=True),
+    }
+
+    print(f"  [re-split 80/10/10]  "
+          f"train={len(splits['train'])}  "
+          f"val={len(splits['val'])}  "
+          f"test={len(splits['test'])}")
+    print(f"  [question_type distribution in train]")
+    for qt, cnt in splits["train"]["question_type"].value_counts().items():
+        print(f"    {qt}: {cnt}")
+
     return splits
 
 

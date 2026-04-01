@@ -19,5 +19,6 @@ rouge-score>=0.1.2              # ROUGE 지표
 bert-score>=0.3.13              # BERTScore 지표
 
 # 유틸리티
+scikit-learn>=1.4.0              # stratified train/val/test split
 pandas>=2.0.0
 numpy>=1.24.0
