@@ -1,0 +1,20 @@
+# SyllabusQA Fine-tuning Requirements
+# Python 3.10+ 권장
+# CUDA 11.8 이상 필요 (RTX 2080 Ti)
+
+# 핵심 라이브러리
+torch>=2.1.0                    # PyTorch (CUDA 버전에 맞게 설치)
+transformers>=4.45.0            # HuggingFace Transformers
+datasets>=2.18.0                # HuggingFace Datasets
+peft>=0.10.0                    # LoRA/QLoRA (Parameter-Efficient Fine-Tuning)
+trl>=0.8.6                      # SFTTrainer (Supervised Fine-Tuning)
+bitsandbytes>=0.43.0            # 4-bit 양자화 (QLoRA 핵심)
+accelerate>=0.28.0              # 멀티GPU 지원 / 학습 가속
+
+# 평가 라이브러리
+rouge-score>=0.1.2              # ROUGE 지표
+bert-score>=0.3.13              # BERTScore 지표
+
+# 유틸리티
+pandas>=2.0.0
+numpy>=1.24.0
