@@ -170,38 +170,69 @@ class SyllabusRAG:
     """
     Lightweight in-memory RAG for a single syllabus document.
 
-    Steps
-    -----
-    1. Chunk   : split the full syllabus text into overlapping word-level chunks
-    2. Embed   : encode every chunk with a small sentence-transformer (CPU)
-    3. Retrieve: at query time embed the question, then return top-k chunks
-                 by cosine similarity
+    Uses transformers AutoTokenizer + AutoModel directly to avoid
+    importing sentence-transformers, which pulls in the full transformers
+    image pipeline and conflicts with older system Pillow installs.
+
+    Embedding model: sentence-transformers/all-MiniLM-L6-v2 weights,
+    loaded via the standard transformers API on CPU.
     """
 
-    def __init__(self, syllabus_text: str):
-        from sentence_transformers import SentenceTransformer
+    MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
 
-        # 'all-MiniLM-L6-v2' is ~90 MB and runs well on CPU,
-        # leaving the full GPU budget for the LLM.
+    def __init__(self, syllabus_text: str):
+        import torch
+        from transformers import AutoModel, AutoTokenizer
+
         print("  [RAG] Loading embedding model (CPU)...")
-        self.embedder = SentenceTransformer("all-MiniLM-L6-v2", device="cpu")
+        self._tokenizer = AutoTokenizer.from_pretrained(self.MODEL_ID)
+        self._model     = AutoModel.from_pretrained(self.MODEL_ID)
+        self._model.eval()
+        # Keep embedder on CPU to leave full GPU for the LLM
+        self._device = torch.device("cpu")
+        self._model.to(self._device)
 
         self.chunks = self._chunk(syllabus_text)
         print(f"  [RAG] {len(self.chunks)} chunks created")
 
         print("  [RAG] Encoding chunks...")
-        self.chunk_embeddings = self.embedder.encode(
-            self.chunks,
-            batch_size=64,
-            show_progress_bar=False,
-            convert_to_numpy=True,
-            normalize_embeddings=True,   # L2-normalise → dot == cosine similarity
-        )
+        self.chunk_embeddings = self._encode(self.chunks)   # (N, D) numpy array
 
+    # ------------------------------------------------------------------
+    def _mean_pool(self, model_output, attention_mask):
+        """Average token embeddings, ignoring padding tokens."""
+        import torch
+        token_emb = model_output.last_hidden_state          # (B, T, D)
+        mask = attention_mask.unsqueeze(-1).expand(token_emb.size()).float()
+        return (token_emb * mask).sum(1) / mask.sum(1).clamp(min=1e-9)
+
+    def _encode(self, texts: list) -> np.ndarray:
+        """Encode a list of strings → L2-normalised numpy array (N, D)."""
+        import torch
+        import torch.nn.functional as F
+        all_embs = []
+        batch_size = 64
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+            enc   = self._tokenizer(
+                batch,
+                padding=True,
+                truncation=True,
+                max_length=256,
+                return_tensors="pt",
+            ).to(self._device)
+            with torch.no_grad():
+                out = self._model(**enc)
+            emb = self._mean_pool(out, enc["attention_mask"])
+            emb = F.normalize(emb, p=2, dim=1)
+            all_embs.append(emb.cpu().numpy())
+        return np.vstack(all_embs)
+
+    # ------------------------------------------------------------------
     def _chunk(self, text: str) -> list:
         """Sliding-window word-level chunking."""
-        words  = text.split()
-        step   = max(1, CHUNK_SIZE - CHUNK_OVERLAP)
+        words = text.split()
+        step  = max(1, CHUNK_SIZE - CHUNK_OVERLAP)
         chunks = []
         for start in range(0, len(words), step):
             chunk = " ".join(words[start : start + CHUNK_SIZE])
@@ -211,15 +242,11 @@ class SyllabusRAG:
 
     def retrieve(self, question: str, top_k: int = TOP_K) -> str:
         """Return top-k chunks most relevant to the question."""
-        q_emb = self.embedder.encode(
-            [question],
-            normalize_embeddings=True,
-            convert_to_numpy=True,
-        )
+        q_emb   = self._encode([question])                  # (1, D)
         scores  = (self.chunk_embeddings @ q_emb.T).squeeze()
         top_idx = np.argsort(scores)[::-1][:top_k]
 
-        # Keep original document order so the context reads naturally
+        # Preserve original document order for natural reading
         retrieved = [self.chunks[i] for i in sorted(top_idx)]
         return "\n\n---\n\n".join(retrieved)
 
@@ -565,5 +592,7 @@ def main():
     print(f"  Results → {OUTPUT_DIR}")
 
 
+if __name__ == "__main__":
+    main()
 if __name__ == "__main__":
     main()
