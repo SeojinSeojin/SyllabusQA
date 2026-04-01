@@ -364,7 +364,7 @@ def train(model, tokenizer, splits, rag: SyllabusRAG):
         lr_scheduler_type="cosine",
         fp16=True,                        # 2080 Ti has no bf16 support
         logging_steps=10,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",

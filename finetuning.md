@@ -18,6 +18,8 @@ root/
 ```bash
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 pip install -r requirements-finetuning.txt
+pip install --user --upgrade pillow
+pip install --user --upgrade jinja2
 ```
 
 ```bash
