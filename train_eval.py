@@ -315,6 +315,7 @@ def load_model_and_tokenizer():
         MODEL_NAME,
         quantization_config=bnb_config,
         device_map="auto",
+        torch_dtype=torch.float16,
         trust_remote_code=True,
     )
     model = prepare_model_for_kbit_training(model)
@@ -331,6 +332,9 @@ def load_model_and_tokenizer():
         task_type="CAUSAL_LM",
     )
     model = get_peft_model(model, lora_config)
+    for p in model.parameters():
+        if p.requires_grad and p.dtype == torch.bfloat16:
+            p.data = p.data.to(torch.float16)
     model.print_trainable_parameters()
     return model, tokenizer
 
@@ -366,7 +370,7 @@ def train(model, tokenizer, splits, rag: SyllabusRAG):
         warmup_steps=10,                        # warmup_ratio deprecated in transformers v5.2
         learning_rate=2e-4,
         lr_scheduler_type="cosine",
-        fp16=True,                        # 2080 Ti has no bf16 support
+        fp16=False,
         gradient_checkpointing=True,          # saves VRAM during backprop
         logging_steps=10,
         eval_strategy="epoch",
