@@ -2,6 +2,9 @@
 # Python 3.10+ 권장
 # CUDA 11.8 이상 필요 (RTX 2080 Ti)
 
+# RAG 임베딩
+sentence-transformers>=2.7.0       # RAG용 청크 임베딩 (CPU 동작)
+
 # 핵심 라이브러리
 torch>=2.1.0                    # PyTorch (CUDA 버전에 맞게 설치)
 transformers>=4.45.0            # HuggingFace Transformers
